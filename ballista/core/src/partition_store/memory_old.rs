@@ -1,9 +1,8 @@
 use datafusion::{
-    arrow::record_batch::RecordBatch,
-    execution::RecordBatchStream,
-    physical_plan::{memory::MemoryStream, SendableRecordBatchStream},
+    arrow::record_batch::RecordBatch, execution::RecordBatchStream,
+    physical_plan::SendableRecordBatchStream,
 };
-use futures::{stream, Stream, StreamExt};
+use futures::{Stream, StreamExt};
 use log::error;
 use std::{
     collections::HashMap,
@@ -136,21 +135,14 @@ impl RecordBatchStream for BufferedStream {
     }
 }
 
-struct Batches {
-    batches: Vec<RecordBatch>,
-    schema: datafusion::arrow::datatypes::SchemaRef,
-}
-
 pub struct InMemoryPartitionStore {
-    stream_store: Arc<Mutex<HashMap<String, SendableRecordBatchStream>>>,
-    batch_store: Arc<Mutex<HashMap<String, Batches>>>,
+    store: Arc<Mutex<HashMap<String, Arc<Mutex<StreamState>>>>>,
 }
 
 impl InMemoryPartitionStore {
     pub fn new() -> Self {
         Self {
-            stream_store: Arc::new(Mutex::new(HashMap::new())),
-            batch_store: Arc::new(Mutex::new(HashMap::new())),
+            store: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 }
@@ -161,41 +153,34 @@ impl PartitionStore for InMemoryPartitionStore {
         // println!("InMemoryPartitionStore.store_batch: {}", path);
         let schema = batch.schema();
 
-        // Get or create entity in batch store, insert batch
-        let mut batch_store = self.batch_store.lock().unwrap();
-        let batches = batch_store
+        // Try to get the state from store and if not exists create a new one
+        let stream_state = self
+            .store
+            .lock()
+            .unwrap()
             .entry(path.to_string())
-            .or_insert_with(|| Batches {
-                batches: Vec::new(),
-                schema: schema.clone(),
-            });
+            .or_insert_with(|| Arc::new(Mutex::new(StreamState::new(schema.clone()))))
+            .clone();
 
-        batches.batches.push(batch);
-
+        stream_state.lock().unwrap().add_batch(batch, false);
         Ok(())
     }
 
     fn finalize_batches(&self, path: &str) -> Result<(), BallistaError> {
         // println!("InMemoryPartitionStore.finalize_batches: {}", path);
-        let mut batch_store = self.batch_store.lock().unwrap();
-        let batches = batch_store.remove(path).ok_or_else(|| {
+        // Try to get the state from store and if not exists create a new one
+        let stream_state_guard = self.store.lock().unwrap();
+        let stream_state = stream_state_guard.get(path).ok_or_else(|| {
             BallistaError::General(format!(
                 "Partition not found in in-memory store: {}",
                 path
             ))
         })?;
 
-        let schema = batches.schema.clone();
-        MemoryStream::try_new(batches.batches, schema, None)
-            .map(|stream| {
-                self.stream_store
-                    .lock()
-                    .unwrap()
-                    .insert(path.to_string(), Box::pin(stream));
-            })
-            .map_err(|e| {
-                BallistaError::General(format!("Error creating stream: {:?}", e))
-            })?;
+        // lock stream state and add final batch, using the schema on the stream state
+        let mut stream_state_guard = stream_state.lock().unwrap();
+        let schema = stream_state_guard.schema.clone();
+        stream_state_guard.add_batch(RecordBatch::new_empty(schema), true);
 
         Ok(())
     }
@@ -203,38 +188,78 @@ impl PartitionStore for InMemoryPartitionStore {
     async fn store_partition(
         &self,
         path: &str,
-        stream: SendableRecordBatchStream,
+        mut stream: SendableRecordBatchStream,
     ) -> Result<Option<PartitionStats>, BallistaError> {
         // println!("InMemoryPartitionStore.store_partition: {}", path);
+        let schema = stream.schema();
+
+        // Create new stream state
+        let stream_state = Arc::new(Mutex::new(StreamState::new(schema.clone())));
+
         // Store the state
-        self.stream_store
+        self.store
             .lock()
             .unwrap()
-            .insert(path.to_string(), stream);
+            .insert(path.to_string(), stream_state.clone());
+
+        // Spawn a task to read from the input stream and manage the state
+        tokio::spawn(async move {
+            let mut num_rows = 0;
+            let mut num_batches = 0;
+            let mut num_bytes = 0;
+
+            while let Some(batch_result) = stream.next().await {
+                match batch_result {
+                    Ok(batch) => {
+                        num_batches += 1;
+                        num_rows += batch.num_rows();
+                        num_bytes += batch.get_array_memory_size();
+
+                        // Add batch to state
+                        stream_state.lock().unwrap().add_batch(batch, false);
+                    }
+                    Err(e) => {
+                        error!("Error processing stream: {:?}", e);
+                        break;
+                    }
+                }
+            }
+
+            // Send final message
+            stream_state
+                .lock()
+                .unwrap()
+                .add_batch(RecordBatch::new_empty(schema), true);
+        });
 
         Ok(None)
     }
 
-    // this can only be called once since the caller consumes the stream
     fn fetch_partition(
         &self,
         path: &str,
     ) -> Result<SendableRecordBatchStream, BallistaError> {
         // println!("InMemoryPartitionStore.fetch_partition: {}", path);
-        let stream = self.stream_store.lock().unwrap().remove(path);
-
-        match stream {
-            Some(stream) => Ok(stream),
-            None => Err(BallistaError::General(format!(
+        let store = self.store.lock().unwrap();
+        let state = store.get(path).ok_or_else(|| {
+            BallistaError::General(format!(
                 "Partition not found in in-memory store: {}",
                 path
-            ))),
-        }
+            ))
+        })?;
+
+        let mut state_guard = state.lock().unwrap();
+        let receiver = state_guard.add_consumer();
+        let schema = state_guard.schema.clone();
+
+        let stream = BufferedStream { schema, receiver };
+
+        Ok(Box::pin(stream))
     }
 
     fn delete_partition(&self, path: &str) -> Result<(), BallistaError> {
         // println!("InMemoryPartitionStore.delete_partition: {}", path);
-        self.stream_store.lock().unwrap().remove(path);
+        self.store.lock().unwrap().remove(path);
         Ok(())
     }
 
@@ -244,6 +269,7 @@ impl PartitionStore for InMemoryPartitionStore {
     ) -> Result<SendableRecordBatchStream, BallistaError> {
         // println!("InMemoryPartitionStore.take_partition: {}", path);
         let stream = self.fetch_partition(path)?;
+        self.delete_partition(path)?;
         Ok(stream)
     }
 }

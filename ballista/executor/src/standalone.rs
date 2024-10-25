@@ -18,7 +18,6 @@
 use crate::metrics::LoggingMetricsCollector;
 use crate::{execution_loop, executor::Executor, flight_service::BallistaFlightService};
 use arrow_flight::flight_service_server::FlightServiceServer;
-use ballista_core::partition_store::memory::InMemoryPartitionStore;
 use ballista_core::partition_store::PartitionStore;
 use ballista_core::{
     error::Result,
