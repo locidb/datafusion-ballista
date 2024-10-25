@@ -40,7 +40,7 @@ pub trait ExecutionEngine: Sync + Send {
 
 /// QueryStageExecutor executes a section of a query plan that has consistent partitioning and
 /// can be executed as one unit with each partition being executed in parallel. The output of each
-/// partition is re-partitioned and streamed to disk in Arrow IPC format. Future stages of the query
+/// partition is re-partitioned and streamed to memory/disk in Arrow IPC format. Future stages of the query
 /// will use the ShuffleReaderExec to read these results.
 #[async_trait]
 pub trait QueryStageExecutor: Sync + Send + Debug {

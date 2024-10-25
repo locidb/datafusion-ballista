@@ -1,4 +1,3 @@
-use async_trait::async_trait;
 use datafusion::{
     arrow::record_batch::RecordBatch, execution::RecordBatchStream,
     physical_plan::SendableRecordBatchStream,
@@ -148,8 +147,42 @@ impl InMemoryPartitionStore {
     }
 }
 
-#[async_trait]
+#[async_trait::async_trait]
 impl PartitionStore for InMemoryPartitionStore {
+    fn store_batch(&self, path: &str, batch: RecordBatch) -> Result<(), BallistaError> {
+        let schema = batch.schema();
+
+        // Try to get the state from store and if not exists create a new one
+        let stream_state = self
+            .store
+            .lock()
+            .unwrap()
+            .entry(path.to_string())
+            .or_insert_with(|| Arc::new(Mutex::new(StreamState::new(schema.clone()))))
+            .clone();
+
+        stream_state.lock().unwrap().add_batch(batch, false);
+        Ok(())
+    }
+
+    fn finalize_batches(&self, path: &str) -> Result<(), BallistaError> {
+        // Try to get the state from store and if not exists create a new one
+        let stream_state_guard = self.store.lock().unwrap();
+        let stream_state = stream_state_guard.get(path).ok_or_else(|| {
+            BallistaError::General(format!(
+                "Partition not found in in-memory store: {}",
+                path
+            ))
+        })?;
+
+        // lock stream state and add final batch, using the schema on the stream state
+        let mut stream_state_guard = stream_state.lock().unwrap();
+        let schema = stream_state_guard.schema.clone();
+        stream_state_guard.add_batch(RecordBatch::new_empty(schema), true);
+
+        Ok(())
+    }
+
     async fn store_partition(
         &self,
         path: &str,
@@ -199,7 +232,7 @@ impl PartitionStore for InMemoryPartitionStore {
         Ok(None)
     }
 
-    async fn fetch_partition(
+    fn fetch_partition(
         &self,
         path: &str,
     ) -> Result<SendableRecordBatchStream, BallistaError> {
@@ -220,17 +253,17 @@ impl PartitionStore for InMemoryPartitionStore {
         Ok(Box::pin(stream))
     }
 
-    async fn delete_partition(&self, path: &str) -> Result<(), BallistaError> {
+    fn delete_partition(&self, path: &str) -> Result<(), BallistaError> {
         self.store.lock().unwrap().remove(path);
         Ok(())
     }
 
-    async fn take_partition(
+    fn take_partition(
         &self,
         path: &str,
     ) -> Result<SendableRecordBatchStream, BallistaError> {
-        let stream = self.fetch_partition(path).await?;
-        self.delete_partition(path).await?;
+        let stream = self.fetch_partition(path)?;
+        self.delete_partition(path)?;
         Ok(stream)
     }
 }

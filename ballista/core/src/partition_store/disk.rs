@@ -1,7 +1,11 @@
+use std::collections::HashMap;
 use std::fs::remove_file;
 use std::fs::File;
 use std::io::BufReader;
+use std::sync::Arc;
+use std::sync::Mutex;
 
+use datafusion::arrow::array::RecordBatch;
 use datafusion::arrow::ipc::reader::StreamReader;
 use futures::StreamExt;
 use log::error;
@@ -10,7 +14,6 @@ use crate::{error::BallistaError, serde::scheduler::PartitionStats};
 
 use super::LocalShuffleStream;
 use super::PartitionStore;
-use async_trait::async_trait;
 use datafusion::{
     arrow::ipc::{
         writer::{IpcWriteOptions, StreamWriter},
@@ -19,10 +22,52 @@ use datafusion::{
     execution::SendableRecordBatchStream,
 };
 
-pub struct DiskBasedPartitionStore {}
+pub struct DiskBasedPartitionStore {
+    batch_writers: Arc<Mutex<HashMap<String, StreamWriter<File>>>>,
+}
 
-#[async_trait]
+impl DiskBasedPartitionStore {
+    pub fn new() -> Self {
+        Self {
+            batch_writers: Arc::new(Mutex::new(HashMap::new())),
+        }
+    }
+}
+
+#[async_trait::async_trait]
 impl PartitionStore for DiskBasedPartitionStore {
+    fn store_batch(&self, path: &str, batch: RecordBatch) -> Result<(), BallistaError> {
+        // get or create a new writer
+        let mut batch_writers = self.batch_writers.lock().unwrap();
+        if !batch_writers.contains_key(path) {
+            let file = File::create(path).map_err(|e| {
+                error!("Failed to create partition file at {}: {:?}", path, e);
+                BallistaError::IoError(e)
+            })?;
+            let options = IpcWriteOptions::default()
+                .try_with_compression(Some(CompressionType::LZ4_FRAME))?;
+            let writer = StreamWriter::try_new_with_options(
+                file,
+                batch.schema().as_ref(),
+                options,
+            )?;
+            batch_writers.insert(path.to_string(), writer);
+        } else {
+            let writer = batch_writers.get_mut(path).unwrap();
+            writer.write(&batch)?;
+        }
+
+        Ok(())
+    }
+
+    fn finalize_batches(&self, path: &str) -> Result<(), BallistaError> {
+        let mut batch_writers = self.batch_writers.lock().unwrap();
+        if let Some(mut writer) = batch_writers.remove(path) {
+            writer.finish()?;
+        }
+        Ok(())
+    }
+
     async fn store_partition(
         &self,
         path: &str,
@@ -62,7 +107,7 @@ impl PartitionStore for DiskBasedPartitionStore {
         )))
     }
 
-    async fn fetch_partition(
+    fn fetch_partition(
         &self,
         path: &str,
     ) -> Result<SendableRecordBatchStream, BallistaError> {
@@ -81,19 +126,19 @@ impl PartitionStore for DiskBasedPartitionStore {
         Ok(Box::pin(LocalShuffleStream::new(reader)))
     }
 
-    async fn delete_partition(&self, path: &str) -> Result<(), BallistaError> {
+    fn delete_partition(&self, path: &str) -> Result<(), BallistaError> {
         remove_file(path).map_err(|e| {
             error!("Failed to delete partition file at {}: {:?}", path, e);
             BallistaError::IoError(e)
         })
     }
 
-    async fn take_partition(
+    fn take_partition(
         &self,
         path: &str,
     ) -> Result<SendableRecordBatchStream, BallistaError> {
-        let stream = self.fetch_partition(path).await?;
-        self.delete_partition(path).await?;
+        let stream = self.fetch_partition(path)?;
+        self.delete_partition(path)?;
         Ok(stream)
     }
 }

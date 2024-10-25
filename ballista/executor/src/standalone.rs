@@ -18,6 +18,7 @@
 use crate::metrics::LoggingMetricsCollector;
 use crate::{execution_loop, executor::Executor, flight_service::BallistaFlightService};
 use arrow_flight::flight_service_server::FlightServiceServer;
+use ballista_core::partition_store::memory::InMemoryPartitionStore;
 use ballista_core::{
     error::Result,
     object_store_registry::with_object_store_registry,
@@ -87,7 +88,7 @@ pub async fn new_standalone_executor<
         None,
     ));
 
-    let service = BallistaFlightService::new();
+    let service = BallistaFlightService::new(Arc::new(InMemoryPartitionStore::new()));
     let server = FlightServiceServer::new(service);
     tokio::spawn(
         create_grpc_server()

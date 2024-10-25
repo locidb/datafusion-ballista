@@ -15,6 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use ballista_core::partition_store::{PartitionStore, PartitionStoreRef};
 use ballista_core::BALLISTA_VERSION;
 use std::collections::HashMap;
 use std::convert::TryInto;
@@ -83,6 +84,7 @@ pub async fn startup<T: 'static + AsLogicalPlan, U: 'static + AsExecutionPlan>(
     codec: BallistaCodec<T, U>,
     stop_send: mpsc::Sender<bool>,
     shutdown_noti: &ShutdownNotifier,
+    partition_store: Arc<dyn PartitionStore>,
 ) -> Result<ServerHandle, BallistaError> {
     let channel_buf_size = executor.concurrent_tasks * 50;
     let (tx_task, rx_task) = mpsc::channel::<CuratorTaskDefinition>(channel_buf_size);
@@ -100,6 +102,7 @@ pub async fn startup<T: 'static + AsLogicalPlan, U: 'static + AsExecutionPlan>(
         codec,
         config.grpc_max_encoding_message_size as usize,
         config.grpc_max_decoding_message_size as usize,
+        partition_store,
     );
 
     // 1. Start executor grpc service
@@ -187,6 +190,7 @@ pub struct ExecutorServer<T: 'static + AsLogicalPlan, U: 'static + AsExecutionPl
     schedulers: SchedulerClients,
     grpc_max_encoding_message_size: usize,
     grpc_max_decoding_message_size: usize,
+    partition_store: Arc<dyn PartitionStore>,
 }
 
 #[derive(Clone)]
@@ -213,6 +217,7 @@ impl<T: 'static + AsLogicalPlan, U: 'static + AsExecutionPlan> ExecutorServer<T,
         codec: BallistaCodec<T, U>,
         grpc_max_encoding_message_size: usize,
         grpc_max_decoding_message_size: usize,
+        partition_store: Arc<dyn PartitionStore>,
     ) -> Self {
         Self {
             _start_time: SystemTime::now()
@@ -226,6 +231,7 @@ impl<T: 'static + AsLogicalPlan, U: 'static + AsExecutionPlan> ExecutorServer<T,
             schedulers: Default::default(),
             grpc_max_encoding_message_size,
             grpc_max_decoding_message_size,
+            partition_store,
         }
     }
 
@@ -349,7 +355,9 @@ impl<T: 'static + AsLogicalPlan, U: 'static + AsExecutionPlan> ExecutorServer<T,
                     debug!("Fail to set session config for ({},{}): {:?}", k, v, e);
                 }
             }
-            let session_config = SessionConfig::from(config);
+            let session_config = SessionConfig::from(config).with_extension(Arc::new(
+                PartitionStoreRef(self.partition_store.clone()),
+            ));
 
             let function_registry = task.function_registry;
             let runtime = self.executor.get_runtime();
