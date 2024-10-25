@@ -27,6 +27,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use ballista_core::config::BallistaConfig;
+use ballista_core::partition_store::PartitionStoreType;
 use ballista_core::serde::protobuf::scheduler_grpc_client::SchedulerGrpcClient;
 use ballista_core::serde::protobuf::{CreateSessionParams, KeyValuePair};
 use ballista_core::utils::{
@@ -144,8 +145,11 @@ impl BallistaContext {
     pub async fn standalone(
         config: &BallistaConfig,
         concurrent_tasks: usize,
+        partition_store_type: PartitionStoreType,
     ) -> ballista_core::error::Result<Self> {
-        use ballista_core::serde::BallistaCodec;
+        use ballista_core::{
+            partition_store::create_partition_store, serde::BallistaCodec,
+        };
         use datafusion_proto::protobuf::PhysicalPlanNode;
 
         log::info!("Running in local mode. Scheduler will be run in-proc");
@@ -198,6 +202,7 @@ impl BallistaContext {
             scheduler,
             concurrent_tasks,
             default_codec,
+            create_partition_store(partition_store_type),
         )
         .await?;
 
@@ -484,6 +489,7 @@ impl BallistaContext {
 #[cfg(test)]
 #[cfg(feature = "standalone")]
 mod standalone_tests {
+    use ballista_core::partition_store::PartitionStoreType;
     use datafusion::arrow;
     use datafusion::arrow::util::pretty::pretty_format_batches;
 
@@ -501,9 +507,13 @@ mod standalone_tests {
     #[tokio::test]
     async fn test_standalone_mode() {
         use super::*;
-        let context = BallistaContext::standalone(&BallistaConfig::new().unwrap(), 1)
-            .await
-            .unwrap();
+        let context = BallistaContext::standalone(
+            &BallistaConfig::new().unwrap(),
+            1,
+            PartitionStoreType::Memory,
+        )
+        .await
+        .unwrap();
         let df = context.sql("SELECT 1;").await.unwrap();
         df.collect().await.unwrap();
     }
@@ -511,8 +521,12 @@ mod standalone_tests {
     #[tokio::test]
     async fn test_write_parquet() -> Result<()> {
         use super::*;
-        let context =
-            BallistaContext::standalone(&BallistaConfig::new().unwrap(), 1).await?;
+        let context = BallistaContext::standalone(
+            &BallistaConfig::new().unwrap(),
+            1,
+            PartitionStoreType::Memory,
+        )
+        .await?;
         let df = context.sql("SELECT 1;").await?;
         let tmp_dir = TempDir::new().unwrap();
         let file_path = format!(
@@ -531,8 +545,12 @@ mod standalone_tests {
     #[tokio::test]
     async fn test_write_csv() -> Result<()> {
         use super::*;
-        let context =
-            BallistaContext::standalone(&BallistaConfig::new().unwrap(), 1).await?;
+        let context = BallistaContext::standalone(
+            &BallistaConfig::new().unwrap(),
+            1,
+            PartitionStoreType::Memory,
+        )
+        .await?;
         let df = context.sql("SELECT 1;").await?;
         let tmp_dir = TempDir::new().unwrap();
         let file_path =
@@ -548,9 +566,13 @@ mod standalone_tests {
         use std::fs::File;
         use std::io::Write;
         use tempfile::TempDir;
-        let context = BallistaContext::standalone(&BallistaConfig::new().unwrap(), 1)
-            .await
-            .unwrap();
+        let context = BallistaContext::standalone(
+            &BallistaConfig::new().unwrap(),
+            1,
+            PartitionStoreType::Memory,
+        )
+        .await
+        .unwrap();
 
         let data = "Jorge,2018-12-13T12:12:10.011Z\n\
                     Andrew,2018-11-13T17:11:10.011Z";
@@ -598,7 +620,9 @@ mod standalone_tests {
             .set(BALLISTA_WITH_INFORMATION_SCHEMA, "true")
             .build()
             .unwrap();
-        let context = BallistaContext::standalone(&config, 1).await.unwrap();
+        let context = BallistaContext::standalone(&config, 1, PartitionStoreType::Memory)
+            .await
+            .unwrap();
 
         let data = "Jorge,2018-12-13T12:12:10.011Z\n\
                     Andrew,2018-11-13T17:11:10.011Z";
@@ -649,7 +673,9 @@ mod standalone_tests {
             .set(BALLISTA_WITH_INFORMATION_SCHEMA, "true")
             .build()
             .unwrap();
-        let context = BallistaContext::standalone(&config, 1).await.unwrap();
+        let context = BallistaContext::standalone(&config, 1, PartitionStoreType::Memory)
+            .await
+            .unwrap();
 
         context
             .register_parquet(
@@ -718,7 +744,9 @@ mod standalone_tests {
             .set(BALLISTA_WITH_INFORMATION_SCHEMA, "true")
             .build()
             .unwrap();
-        let context = BallistaContext::standalone(&config, 1).await.unwrap();
+        let context = BallistaContext::standalone(&config, 1, PartitionStoreType::Memory)
+            .await
+            .unwrap();
 
         let sql = "select EXTRACT(year FROM to_timestamp('2020-09-08T12:13:14+00:00'));";
 
@@ -737,7 +765,9 @@ mod standalone_tests {
             .set(BALLISTA_WITH_INFORMATION_SCHEMA, "true")
             .build()
             .unwrap();
-        let context = BallistaContext::standalone(&config, 1).await.unwrap();
+        let context = BallistaContext::standalone(&config, 1, PartitionStoreType::Memory)
+            .await
+            .unwrap();
 
         let df = context
             .sql("SELECT 1 as NUMBER union SELECT 1 as NUMBER;")
@@ -1059,7 +1089,9 @@ mod standalone_tests {
             .set(BALLISTA_WITH_INFORMATION_SCHEMA, "true")
             .build()
             .unwrap();
-        let context = BallistaContext::standalone(&config, 4).await.unwrap();
+        let context = BallistaContext::standalone(&config, 4, PartitionStoreType::Memory)
+            .await
+            .unwrap();
 
         context
             .register_parquet(

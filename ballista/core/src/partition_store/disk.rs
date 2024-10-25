@@ -37,6 +37,7 @@ impl DiskBasedPartitionStore {
 #[async_trait::async_trait]
 impl PartitionStore for DiskBasedPartitionStore {
     fn store_batch(&self, path: &str, batch: RecordBatch) -> Result<(), BallistaError> {
+        log::debug!("DiskBasedPartitionStore.store_batch: {}", path);
         // get or create a new writer
         let mut batch_writers = self.batch_writers.lock().unwrap();
         if !batch_writers.contains_key(path) {
@@ -61,6 +62,7 @@ impl PartitionStore for DiskBasedPartitionStore {
     }
 
     fn finalize_batches(&self, path: &str) -> Result<(), BallistaError> {
+        log::debug!("DiskBasedPartitionStore.finalize_batches: {}", path);
         let mut batch_writers = self.batch_writers.lock().unwrap();
         if let Some(mut writer) = batch_writers.remove(path) {
             writer.finish()?;
@@ -73,6 +75,7 @@ impl PartitionStore for DiskBasedPartitionStore {
         path: &str,
         mut stream: SendableRecordBatchStream,
     ) -> Result<Option<PartitionStats>, BallistaError> {
+        log::debug!("DiskBasedPartitionStore.store_partition: {}", path);
         let file = File::create(path).map_err(|e| {
             error!("Failed to create partition file at {}: {:?}", path, e);
             BallistaError::IoError(e)
@@ -111,6 +114,7 @@ impl PartitionStore for DiskBasedPartitionStore {
         &self,
         path: &str,
     ) -> Result<SendableRecordBatchStream, BallistaError> {
+        log::debug!("DiskBasedPartitionStore.fetch_partition: {}", path);
         let file = File::open(path).map_err(|e| {
             BallistaError::General(format!(
                 "Failed to open partition file at {path}: {e:?}"
@@ -127,6 +131,7 @@ impl PartitionStore for DiskBasedPartitionStore {
     }
 
     fn delete_partition(&self, path: &str) -> Result<(), BallistaError> {
+        log::debug!("DiskBasedPartitionStore.delete_partition: {}", path);
         remove_file(path).map_err(|e| {
             error!("Failed to delete partition file at {}: {:?}", path, e);
             BallistaError::IoError(e)
@@ -137,6 +142,7 @@ impl PartitionStore for DiskBasedPartitionStore {
         &self,
         path: &str,
     ) -> Result<SendableRecordBatchStream, BallistaError> {
+        log::debug!("DiskBasedPartitionStore.take_partition: {}", path);
         let stream = self.fetch_partition(path)?;
         self.delete_partition(path)?;
         Ok(stream)

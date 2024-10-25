@@ -22,7 +22,6 @@ use crate::execution_engine::ExecutionEngine;
 use crate::execution_engine::QueryStageExecutor;
 use crate::metrics::ExecutorMetricsCollector;
 use ballista_core::error::BallistaError;
-use ballista_core::partition_store::memory::InMemoryPartitionStore;
 use ballista_core::partition_store::PartitionStore;
 use ballista_core::serde::protobuf;
 use ballista_core::serde::protobuf::ExecutorRegistration;
@@ -102,7 +101,7 @@ impl Executor {
         metrics_collector: Arc<dyn ExecutorMetricsCollector>,
         concurrent_tasks: usize,
         execution_engine: Option<Arc<dyn ExecutionEngine>>,
-        partition_store: Option<Arc<dyn PartitionStore>>,
+        partition_store: Arc<dyn PartitionStore>,
     ) -> Self {
         let scalar_functions = all_default_functions()
             .into_iter()
@@ -127,8 +126,7 @@ impl Executor {
             abort_handles: Default::default(),
             execution_engine: execution_engine
                 .unwrap_or_else(|| Arc::new(DefaultExecutionEngine {})),
-            partition_store: partition_store
-                .unwrap_or_else(|| Arc::new(InMemoryPartitionStore::new())),
+            partition_store,
         }
     }
 }
@@ -208,6 +206,7 @@ mod test {
     use arrow::datatypes::{Schema, SchemaRef};
     use arrow::record_batch::RecordBatch;
     use ballista_core::execution_plans::ShuffleWriterExec;
+    use ballista_core::partition_store::memory::InMemoryPartitionStore;
     use ballista_core::serde::protobuf::ExecutorRegistration;
     use ballista_core::serde::scheduler::PartitionId;
     use datafusion::error::{DataFusionError, Result};
@@ -358,7 +357,7 @@ mod test {
             Arc::new(LoggingMetricsCollector {}),
             2,
             None,
-            None,
+            Arc::new(InMemoryPartitionStore::new()),
         );
 
         let (sender, receiver) = tokio::sync::oneshot::channel();

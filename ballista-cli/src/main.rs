@@ -18,6 +18,7 @@
 use std::env;
 use std::path::Path;
 
+use ballista::prelude::PartitionStoreType;
 use ballista::prelude::{BallistaConfig, BallistaContext, Result};
 use ballista_cli::{
     exec, print_format::PrintFormat, print_options::PrintOptions, BALLISTA_CLI_VERSION,
@@ -130,7 +131,12 @@ pub async fn main() -> Result<()> {
                 num_cpus::get()
             };
             // In-process execution with Ballista Standalone
-            BallistaContext::standalone(&ballista_config, concurrent_tasks).await?
+            BallistaContext::standalone(
+                &ballista_config,
+                concurrent_tasks,
+                PartitionStoreType::Disk,
+            )
+            .await?
         }
     };
 

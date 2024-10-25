@@ -20,6 +20,22 @@ pub mod disk;
 pub mod hybrid;
 pub mod memory;
 
+pub enum PartitionStoreType {
+    Memory,
+    Disk,
+    Hybrid,
+}
+
+pub fn create_partition_store(
+    partition_store_type: PartitionStoreType,
+) -> Arc<dyn PartitionStore> {
+    match partition_store_type {
+        PartitionStoreType::Memory => Arc::new(memory::InMemoryPartitionStore::new()),
+        PartitionStoreType::Disk => Arc::new(disk::DiskBasedPartitionStore::new()),
+        PartitionStoreType::Hybrid => Arc::new(hybrid::HybridPartitionStore::default()),
+    }
+}
+
 pub fn get_partition_store(session_config: &SessionConfig) -> Arc<dyn PartitionStore> {
     session_config
         .get_extension::<PartitionStoreRef>()

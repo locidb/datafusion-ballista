@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use ballista_core::partition_store::{PartitionStore, PartitionStoreRef};
+use ballista_core::partition_store::PartitionStoreRef;
 use ballista_core::BALLISTA_VERSION;
 use std::collections::HashMap;
 use std::convert::TryInto;

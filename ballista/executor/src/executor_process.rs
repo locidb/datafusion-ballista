@@ -216,7 +216,7 @@ pub async fn start_executor_process(opt: Arc<ExecutorProcessConfig>) -> Result<(
         metrics_collector,
         concurrent_tasks,
         opt.execution_engine.clone(),
-        Some(partition_store),
+        partition_store,
     ));
 
     let connect_timeout = opt.scheduler_connect_timeout_seconds as u64;
