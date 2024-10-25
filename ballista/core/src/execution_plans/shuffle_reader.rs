@@ -319,6 +319,7 @@ fn send_fetch_partitions(
         let semaphore = semaphore.clone();
         let response_sender = response_sender.clone();
         let store = partition_store.clone();
+        println!("fetching partition from remote location: {:?}", p);
         spawned_tasks.push(SpawnedTask::spawn(async move {
             // Block if exceeds max request number.
             let permit = semaphore.acquire_owned().await.unwrap();
