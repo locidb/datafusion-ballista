@@ -37,7 +37,11 @@ impl DiskBasedPartitionStore {
 #[async_trait::async_trait]
 impl PartitionStore for DiskBasedPartitionStore {
     fn store_batch(&self, path: &str, batch: RecordBatch) -> Result<(), BallistaError> {
-        println!("DiskBasedPartitionStore.store_batch: {}", path);
+        println!(
+            "DiskBasedPartitionStore.store_batch: {}, num rows: {}",
+            path,
+            batch.num_rows()
+        );
         // get or create a new writer
         let mut batch_writers = self.batch_writers.lock().unwrap();
         if !batch_writers.contains_key(path) {
@@ -101,6 +105,10 @@ impl PartitionStore for DiskBasedPartitionStore {
 
             writer.write(&batch)?;
         }
+        println!(
+            "DiskBasedPartitionStore.store_partition finished: {}, num_rows: {}",
+            path, num_rows
+        );
         writer.finish()?;
 
         Ok(Some(PartitionStats::new(
