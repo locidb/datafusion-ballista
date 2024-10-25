@@ -196,6 +196,19 @@ pub async fn start_executor_process(opt: Arc<ExecutorProcessConfig>) -> Result<(
 
     let metrics_collector = Arc::new(LoggingMetricsCollector::default());
 
+    let partition_store = match opt.partition_store.as_str() {
+        "memory" => Arc::new(InMemoryPartitionStore::new()) as Arc<dyn PartitionStore>,
+        "disk" => Arc::new(DiskBasedPartitionStore::new()) as Arc<dyn PartitionStore>,
+        "hybrid" => Arc::new(HybridPartitionStore::default()) as Arc<dyn PartitionStore>,
+        _ => {
+            return Err(BallistaError::General(format!(
+                "Unsupported partition store: {}",
+                opt.partition_store
+            ))
+            .into())
+        }
+    };
+
     let executor = Arc::new(Executor::new(
         executor_meta,
         &work_dir,
@@ -203,6 +216,7 @@ pub async fn start_executor_process(opt: Arc<ExecutorProcessConfig>) -> Result<(
         metrics_collector,
         concurrent_tasks,
         opt.execution_engine.clone(),
+        Some(partition_store),
     ));
 
     let connect_timeout = opt.scheduler_connect_timeout_seconds as u64;
@@ -258,19 +272,6 @@ pub async fn start_executor_process(opt: Arc<ExecutorProcessConfig>) -> Result<(
     // Graceful shutdown notification
     let shutdown_noti = ShutdownNotifier::new();
 
-    let partition_store = match opt.partition_store.as_str() {
-        "memory" => Arc::new(InMemoryPartitionStore::new()) as Arc<dyn PartitionStore>,
-        "disk" => Arc::new(DiskBasedPartitionStore::new()) as Arc<dyn PartitionStore>,
-        "hybrid" => Arc::new(HybridPartitionStore::default()) as Arc<dyn PartitionStore>,
-        _ => {
-            return Err(BallistaError::General(format!(
-                "Unsupported partition store: {}",
-                opt.partition_store
-            ))
-            .into())
-        }
-    };
-
     if opt.job_data_clean_up_interval_seconds > 0 {
         let mut interval_time =
             time::interval(Duration::from_secs(opt.job_data_clean_up_interval_seconds));
@@ -318,7 +319,6 @@ pub async fn start_executor_process(opt: Arc<ExecutorProcessConfig>) -> Result<(
                     default_codec,
                     stop_send,
                     &shutdown_noti,
-                    partition_store.clone(),
                 )
                 .await?,
             );
@@ -334,7 +334,7 @@ pub async fn start_executor_process(opt: Arc<ExecutorProcessConfig>) -> Result<(
     service_handlers.push(tokio::spawn(flight_server_run(
         addr,
         shutdown_noti.subscribe_for_shutdown(),
-        partition_store.clone(),
+        executor.partition_store.clone(),
     )));
 
     let tasks_drained = TasksDrainedFuture(executor);

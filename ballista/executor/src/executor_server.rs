@@ -84,7 +84,6 @@ pub async fn startup<T: 'static + AsLogicalPlan, U: 'static + AsExecutionPlan>(
     codec: BallistaCodec<T, U>,
     stop_send: mpsc::Sender<bool>,
     shutdown_noti: &ShutdownNotifier,
-    partition_store: Arc<dyn PartitionStore>,
 ) -> Result<ServerHandle, BallistaError> {
     let channel_buf_size = executor.concurrent_tasks * 50;
     let (tx_task, rx_task) = mpsc::channel::<CuratorTaskDefinition>(channel_buf_size);
@@ -102,7 +101,6 @@ pub async fn startup<T: 'static + AsLogicalPlan, U: 'static + AsExecutionPlan>(
         codec,
         config.grpc_max_encoding_message_size as usize,
         config.grpc_max_decoding_message_size as usize,
-        partition_store,
     );
 
     // 1. Start executor grpc service
@@ -190,7 +188,6 @@ pub struct ExecutorServer<T: 'static + AsLogicalPlan, U: 'static + AsExecutionPl
     schedulers: SchedulerClients,
     grpc_max_encoding_message_size: usize,
     grpc_max_decoding_message_size: usize,
-    partition_store: Arc<dyn PartitionStore>,
 }
 
 #[derive(Clone)]
@@ -217,7 +214,6 @@ impl<T: 'static + AsLogicalPlan, U: 'static + AsExecutionPlan> ExecutorServer<T,
         codec: BallistaCodec<T, U>,
         grpc_max_encoding_message_size: usize,
         grpc_max_decoding_message_size: usize,
-        partition_store: Arc<dyn PartitionStore>,
     ) -> Self {
         Self {
             _start_time: SystemTime::now()
@@ -231,7 +227,6 @@ impl<T: 'static + AsLogicalPlan, U: 'static + AsExecutionPlan> ExecutorServer<T,
             schedulers: Default::default(),
             grpc_max_encoding_message_size,
             grpc_max_decoding_message_size,
-            partition_store,
         }
     }
 
@@ -356,7 +351,7 @@ impl<T: 'static + AsLogicalPlan, U: 'static + AsExecutionPlan> ExecutorServer<T,
                 }
             }
             let session_config = SessionConfig::from(config).with_extension(Arc::new(
-                PartitionStoreRef(self.partition_store.clone()),
+                PartitionStoreRef(self.executor.partition_store.clone()),
             ));
 
             let function_registry = task.function_registry;

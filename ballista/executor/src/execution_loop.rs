@@ -15,6 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use ballista_core::partition_store::PartitionStoreRef;
 use datafusion::config::ConfigOptions;
 use datafusion::physical_plan::ExecutionPlan;
 
@@ -182,7 +183,9 @@ async fn run_received_task<T: 'static + AsLogicalPlan, U: 'static + AsExecutionP
     for (k, v) in task_props {
         config.set(&k, &v)?;
     }
-    let session_config = SessionConfig::from(config);
+    let session_config = SessionConfig::from(config).with_extension(Arc::new(
+        PartitionStoreRef(executor.partition_store.clone()),
+    ));
 
     let mut task_scalar_functions = HashMap::new();
     let mut task_aggregate_functions = HashMap::new();

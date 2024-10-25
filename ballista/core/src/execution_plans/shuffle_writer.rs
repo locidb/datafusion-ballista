@@ -476,6 +476,8 @@ mod tests {
     // number of rows in each partition is a function of the hash output, so don't test here
     #[cfg(not(feature = "force_hash_collisions"))]
     async fn test() -> Result<()> {
+        use crate::utils;
+
         let session_ctx = SessionContext::new();
         let task_ctx = session_ctx.task_ctx();
 
@@ -533,6 +535,8 @@ mod tests {
     // number of rows in each partition is a function of the hash output, so don't test here
     #[cfg(not(feature = "force_hash_collisions"))]
     async fn test_partitioned() -> Result<()> {
+        use crate::utils;
+
         let session_ctx = SessionContext::new();
         let task_ctx = session_ctx.task_ctx();
 
