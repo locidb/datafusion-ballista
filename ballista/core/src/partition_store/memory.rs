@@ -150,7 +150,7 @@ impl InMemoryPartitionStore {
 #[async_trait::async_trait]
 impl PartitionStore for InMemoryPartitionStore {
     fn store_batch(&self, path: &str, batch: RecordBatch) -> Result<(), BallistaError> {
-        log::debug!("InMemoryPartitionStore.store_batch: {}", path);
+        println!("InMemoryPartitionStore.store_batch: {}", path);
         let schema = batch.schema();
 
         // Try to get the state from store and if not exists create a new one
@@ -167,7 +167,7 @@ impl PartitionStore for InMemoryPartitionStore {
     }
 
     fn finalize_batches(&self, path: &str) -> Result<(), BallistaError> {
-        log::debug!("InMemoryPartitionStore.finalize_batches: {}", path);
+        println!("InMemoryPartitionStore.finalize_batches: {}", path);
         // Try to get the state from store and if not exists create a new one
         let stream_state_guard = self.store.lock().unwrap();
         let stream_state = stream_state_guard.get(path).ok_or_else(|| {
@@ -190,7 +190,7 @@ impl PartitionStore for InMemoryPartitionStore {
         path: &str,
         mut stream: SendableRecordBatchStream,
     ) -> Result<Option<PartitionStats>, BallistaError> {
-        log::debug!("InMemoryPartitionStore.store_partition: {}", path);
+        println!("InMemoryPartitionStore.store_partition: {}", path);
         let schema = stream.schema();
 
         // Create new stream state
@@ -239,7 +239,7 @@ impl PartitionStore for InMemoryPartitionStore {
         &self,
         path: &str,
     ) -> Result<SendableRecordBatchStream, BallistaError> {
-        log::debug!("InMemoryPartitionStore.fetch_partition: {}", path);
+        println!("InMemoryPartitionStore.fetch_partition: {}", path);
         let store = self.store.lock().unwrap();
         let state = store.get(path).ok_or_else(|| {
             BallistaError::General(format!(
@@ -258,7 +258,7 @@ impl PartitionStore for InMemoryPartitionStore {
     }
 
     fn delete_partition(&self, path: &str) -> Result<(), BallistaError> {
-        log::debug!("InMemoryPartitionStore.delete_partition: {}", path);
+        println!("InMemoryPartitionStore.delete_partition: {}", path);
         self.store.lock().unwrap().remove(path);
         Ok(())
     }
@@ -267,7 +267,7 @@ impl PartitionStore for InMemoryPartitionStore {
         &self,
         path: &str,
     ) -> Result<SendableRecordBatchStream, BallistaError> {
-        log::debug!("InMemoryPartitionStore.take_partition: {}", path);
+        println!("InMemoryPartitionStore.take_partition: {}", path);
         let stream = self.fetch_partition(path)?;
         self.delete_partition(path)?;
         Ok(stream)
