@@ -110,13 +110,13 @@ impl FlightService for BallistaFlightService {
                     .map(|rb| rb.map_err(|e| FlightError::ExternalError(Box::new(e))));
                 // let e = partition_stream.peekable().peek();
 
-                // let write_options: IpcWriteOptions = IpcWriteOptions::default()
-                //     .try_with_compression(Some(CompressionType::LZ4_FRAME))
-                //     .map_err(|e| from_arrow_err(&e))?;
+                let write_options: IpcWriteOptions = IpcWriteOptions::default()
+                    .try_with_compression(Some(CompressionType::LZ4_FRAME))
+                    .map_err(|e| from_arrow_err(&e))?;
 
                 let flight_data_stream = FlightDataEncoderBuilder::new()
                     .with_schema(schema)
-                    // .with_options(write_options)
+                    .with_options(write_options)
                     .build(partition_stream)
                     .map_err(|err| Status::from_error(Box::new(err)));
 
