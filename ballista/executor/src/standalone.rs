@@ -88,10 +88,10 @@ pub async fn new_standalone_executor<
         Arc::new(LoggingMetricsCollector::default()),
         concurrent_tasks,
         None,
-        partition_store,
+        partition_store.clone(),
     ));
 
-    let service = BallistaFlightService::new(Arc::new(InMemoryPartitionStore::new()));
+    let service = BallistaFlightService::new(partition_store);
     let server = FlightServiceServer::new(service);
     tokio::spawn(
         create_grpc_server()
