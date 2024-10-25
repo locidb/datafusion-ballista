@@ -144,6 +144,10 @@ impl ExecutionPlan for ShuffleReaderExec {
         context: Arc<TaskContext>,
     ) -> Result<SendableRecordBatchStream> {
         let task_id = context.task_id().unwrap_or_else(|| partition.to_string());
+        println!(
+            "ShuffleReaderExec::execute({}), partition: {}",
+            task_id, partition
+        );
         info!("ShuffleReaderExec::execute({})", task_id);
 
         // TODO make the maximum size configurable, or make it depends on global memory control

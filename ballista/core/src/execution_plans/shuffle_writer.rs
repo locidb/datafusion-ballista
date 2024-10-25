@@ -170,6 +170,13 @@ impl ShuffleWriterExec {
         input_partition: usize,
         context: Arc<TaskContext>,
     ) -> impl Future<Output = Result<Vec<ShuffleWritePartition>>> {
+        let task_id = context
+            .task_id()
+            .unwrap_or_else(|| input_partition.to_string());
+        println!(
+            "execute_shuffle_write, task_id: {}, input_partition: {}",
+            task_id, input_partition
+        );
         let mut path = PathBuf::from(&self.work_dir);
         path.push(&self.job_id);
         path.push(format!("{}", self.stage_id));
@@ -386,6 +393,7 @@ impl ExecutionPlan for ShuffleWriterExec {
         partition: usize,
         context: Arc<TaskContext>,
     ) -> Result<SendableRecordBatchStream> {
+        println!("shuffe_writer execute, partition: {}", partition);
         let schema = result_schema();
         let schema_captured = schema.clone();
         let fut_stream = self
