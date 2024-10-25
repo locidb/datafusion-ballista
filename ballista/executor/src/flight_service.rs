@@ -18,6 +18,8 @@
 //! Implementation of the Apache Arrow Flight protocol that wraps an executor.
 
 use arrow::ipc::reader::StreamReader;
+use arrow::ipc::writer::IpcWriteOptions;
+use arrow::ipc::CompressionType;
 use ballista_core::partition_store::PartitionStore;
 use std::convert::TryFrom;
 use std::pin::Pin;
