@@ -49,7 +49,7 @@ use crate::error::BallistaError;
 use datafusion::execution::context::TaskContext;
 use datafusion::physical_plan::stream::RecordBatchStreamAdapter;
 use itertools::Itertools;
-use log::{error, info};
+use log::{debug, error, info};
 use rand::prelude::SliceRandom;
 use rand::thread_rng;
 use tokio::sync::{mpsc, Semaphore};
@@ -144,10 +144,6 @@ impl ExecutionPlan for ShuffleReaderExec {
         context: Arc<TaskContext>,
     ) -> Result<SendableRecordBatchStream> {
         let task_id = context.task_id().unwrap_or_else(|| partition.to_string());
-        println!(
-            "ShuffleReaderExec::execute({}), partition: {}",
-            task_id, partition
-        );
         info!("ShuffleReaderExec::execute({})", task_id);
 
         // TODO make the maximum size configurable, or make it depends on global memory control
@@ -323,7 +319,7 @@ fn send_fetch_partitions(
         let semaphore = semaphore.clone();
         let response_sender = response_sender.clone();
         let store = partition_store.clone();
-        println!("fetching partition from remote location: {:?}", p);
+        debug!("fetching partition from remote location: {:?}", p);
         spawned_tasks.push(SpawnedTask::spawn(async move {
             // Block if exceeds max request number.
             let permit = semaphore.acquire_owned().await.unwrap();

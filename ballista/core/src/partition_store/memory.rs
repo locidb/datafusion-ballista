@@ -2,6 +2,7 @@ use datafusion::{
     arrow::record_batch::RecordBatch,
     physical_plan::{memory::MemoryStream, SendableRecordBatchStream},
 };
+use log::debug;
 use std::{
     collections::HashMap,
     sync::{Arc, Mutex},
@@ -23,7 +24,7 @@ pub struct InMemoryPartitionStore {
 
 impl InMemoryPartitionStore {
     pub fn new() -> Self {
-        println!("Creating InMemoryPartitionStore");
+        debug!("Creating InMemoryPartitionStore");
         Self {
             stream_store: Arc::new(Mutex::new(HashMap::new())),
             batch_store: Arc::new(Mutex::new(HashMap::new())),
@@ -34,7 +35,7 @@ impl InMemoryPartitionStore {
 #[async_trait::async_trait]
 impl PartitionStore for InMemoryPartitionStore {
     fn store_batch(&self, path: &str, batch: RecordBatch) -> Result<(), BallistaError> {
-        println!("InMemoryPartitionStore.store_batch: {}", path);
+        debug!("InMemoryPartitionStore.store_batch: {}", path);
         let schema = batch.schema();
 
         // Get or create entity in batch store, insert batch
@@ -52,7 +53,7 @@ impl PartitionStore for InMemoryPartitionStore {
     }
 
     fn finalize_batches(&self, path: &str) -> Result<(), BallistaError> {
-        println!("InMemoryPartitionStore.finalize_batches: {}", path);
+        debug!("InMemoryPartitionStore.finalize_batches: {}", path);
         let mut batch_store = self.batch_store.lock().unwrap();
         let batches = batch_store.remove(path).ok_or_else(|| {
             BallistaError::General(format!(
@@ -81,7 +82,7 @@ impl PartitionStore for InMemoryPartitionStore {
         path: &str,
         stream: SendableRecordBatchStream,
     ) -> Result<Option<PartitionStats>, BallistaError> {
-        println!("InMemoryPartitionStore.store_partition: {}", path);
+        debug!("InMemoryPartitionStore.store_partition: {}", path);
         // Store the state
         self.stream_store
             .lock()
@@ -96,7 +97,7 @@ impl PartitionStore for InMemoryPartitionStore {
         &self,
         path: &str,
     ) -> Result<SendableRecordBatchStream, BallistaError> {
-        println!("InMemoryPartitionStore.fetch_partition: {}", path);
+        debug!("InMemoryPartitionStore.fetch_partition: {}", path);
         let stream = self.stream_store.lock().unwrap().remove(path);
 
         match stream {
@@ -109,7 +110,7 @@ impl PartitionStore for InMemoryPartitionStore {
     }
 
     fn delete_partition(&self, path: &str) -> Result<(), BallistaError> {
-        println!("InMemoryPartitionStore.delete_partition: {}", path);
+        debug!("InMemoryPartitionStore.delete_partition: {}", path);
         self.stream_store.lock().unwrap().remove(path);
         Ok(())
     }
@@ -118,7 +119,7 @@ impl PartitionStore for InMemoryPartitionStore {
         &self,
         path: &str,
     ) -> Result<SendableRecordBatchStream, BallistaError> {
-        println!("InMemoryPartitionStore.take_partition: {}", path);
+        debug!("InMemoryPartitionStore.take_partition: {}", path);
         let stream = self.fetch_partition(path)?;
         Ok(stream)
     }

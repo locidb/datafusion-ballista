@@ -8,6 +8,7 @@ use std::sync::Mutex;
 use datafusion::arrow::array::RecordBatch;
 use datafusion::arrow::ipc::reader::StreamReader;
 use futures::StreamExt;
+use log::debug;
 use log::error;
 
 use crate::{error::BallistaError, serde::scheduler::PartitionStats};
@@ -28,7 +29,7 @@ pub struct DiskBasedPartitionStore {
 
 impl DiskBasedPartitionStore {
     pub fn new() -> Self {
-        println!("Creating DiskBasedPartitionStore");
+        debug!("Creating DiskBasedPartitionStore");
         Self {
             batch_writers: Arc::new(Mutex::new(HashMap::new())),
         }
@@ -38,7 +39,7 @@ impl DiskBasedPartitionStore {
 #[async_trait::async_trait]
 impl PartitionStore for DiskBasedPartitionStore {
     fn store_batch(&self, path: &str, batch: RecordBatch) -> Result<(), BallistaError> {
-        println!(
+        debug!(
             "DiskBasedPartitionStore.store_batch: {}, num rows: {}",
             path,
             batch.num_rows()
@@ -67,7 +68,7 @@ impl PartitionStore for DiskBasedPartitionStore {
     }
 
     fn finalize_batches(&self, path: &str) -> Result<(), BallistaError> {
-        println!("DiskBasedPartitionStore.finalize_batches: {}", path);
+        debug!("DiskBasedPartitionStore.finalize_batches: {}", path);
         let mut batch_writers = self.batch_writers.lock().unwrap();
         if let Some(mut writer) = batch_writers.remove(path) {
             writer.finish()?;
@@ -80,7 +81,7 @@ impl PartitionStore for DiskBasedPartitionStore {
         path: &str,
         mut stream: SendableRecordBatchStream,
     ) -> Result<Option<PartitionStats>, BallistaError> {
-        println!("DiskBasedPartitionStore.store_partition: {}", path);
+        debug!("DiskBasedPartitionStore.store_partition: {}", path);
         let file = File::create(path).map_err(|e| {
             error!("Failed to create partition file at {}: {:?}", path, e);
             BallistaError::IoError(e)
@@ -106,7 +107,7 @@ impl PartitionStore for DiskBasedPartitionStore {
 
             writer.write(&batch)?;
         }
-        println!(
+        debug!(
             "DiskBasedPartitionStore.store_partition finished: {}, num_rows: {}",
             path, num_rows
         );
@@ -123,7 +124,7 @@ impl PartitionStore for DiskBasedPartitionStore {
         &self,
         path: &str,
     ) -> Result<SendableRecordBatchStream, BallistaError> {
-        println!("DiskBasedPartitionStore.fetch_partition: {}", path);
+        debug!("DiskBasedPartitionStore.fetch_partition: {}", path);
         let file = File::open(path).map_err(|e| {
             BallistaError::General(format!(
                 "Failed to open partition file at {path}: {e:?}"
@@ -140,7 +141,7 @@ impl PartitionStore for DiskBasedPartitionStore {
     }
 
     fn delete_partition(&self, path: &str) -> Result<(), BallistaError> {
-        println!("DiskBasedPartitionStore.delete_partition: {}", path);
+        debug!("DiskBasedPartitionStore.delete_partition: {}", path);
         remove_file(path).map_err(|e| {
             error!("Failed to delete partition file at {}: {:?}", path, e);
             BallistaError::IoError(e)
@@ -151,7 +152,7 @@ impl PartitionStore for DiskBasedPartitionStore {
         &self,
         path: &str,
     ) -> Result<SendableRecordBatchStream, BallistaError> {
-        println!("DiskBasedPartitionStore.take_partition: {}", path);
+        debug!("DiskBasedPartitionStore.take_partition: {}", path);
         let stream = self.fetch_partition(path)?;
         self.delete_partition(path)?;
         Ok(stream)
