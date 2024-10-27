@@ -22,8 +22,8 @@ pub struct InMemoryPartitionStore {
 }
 
 impl InMemoryPartitionStore {
-    println!("Creating InMemoryPartitionStore");
     pub fn new() -> Self {
+        println!("Creating InMemoryPartitionStore");
         Self {
             stream_store: Arc::new(Mutex::new(HashMap::new())),
             batch_store: Arc::new(Mutex::new(HashMap::new())),
