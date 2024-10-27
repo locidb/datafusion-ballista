@@ -1,140 +1,15 @@
 use datafusion::{
     arrow::record_batch::RecordBatch,
-    execution::RecordBatchStream,
     physical_plan::{memory::MemoryStream, SendableRecordBatchStream},
 };
-use futures::{stream, Stream, StreamExt};
-use log::error;
 use std::{
     collections::HashMap,
-    pin::Pin,
     sync::{Arc, Mutex},
-    task::{Context, Poll},
 };
-use tokio::sync::mpsc;
 
 use crate::{error::BallistaError, serde::scheduler::PartitionStats};
 
 use super::PartitionStore;
-
-#[derive(Clone)]
-struct BatchItem {
-    batch: Arc<RecordBatch>,
-    is_last: bool,
-}
-
-// Track consumer state
-struct Consumer {
-    next_batch_index: usize,
-    sender: mpsc::Sender<Arc<BatchItem>>,
-}
-
-// Struct to manage stream state
-struct StreamState {
-    buffer: Vec<Arc<BatchItem>>,
-    consumers: Vec<Consumer>,
-    completed: bool,
-    schema: datafusion::arrow::datatypes::SchemaRef,
-}
-
-impl StreamState {
-    fn new(schema: datafusion::arrow::datatypes::SchemaRef) -> Self {
-        Self {
-            buffer: Vec::new(),
-            consumers: Vec::new(),
-            completed: false,
-            schema,
-        }
-    }
-
-    fn add_batch(&mut self, batch: RecordBatch, is_last: bool) {
-        let item = Arc::new(BatchItem {
-            batch: Arc::new(batch),
-            is_last,
-        });
-
-        // Send to all current consumers who haven't seen this batch yet
-        self.consumers.retain_mut(|consumer| {
-            if consumer.next_batch_index == self.buffer.len() {
-                match consumer.sender.try_send(item.clone()) {
-                    Ok(_) => {
-                        consumer.next_batch_index += 1;
-                        true
-                    }
-                    Err(_) => false, // Remove consumer if send fails
-                }
-            } else {
-                true
-            }
-        });
-
-        // Store in buffer
-        self.buffer.push(item);
-
-        if is_last {
-            self.completed = true;
-        }
-    }
-
-    fn add_consumer(&mut self) -> mpsc::Receiver<Arc<BatchItem>> {
-        let (sender, receiver) = mpsc::channel(100);
-
-        // Create new consumer
-        let mut consumer = Consumer {
-            next_batch_index: 0,
-            sender,
-        };
-
-        // Send all buffered batches to the new consumer
-        for item in &self.buffer[consumer.next_batch_index..] {
-            if consumer.sender.try_send(item.clone()).is_ok() {
-                consumer.next_batch_index += 1;
-            } else {
-                break;
-            }
-        }
-
-        // If not completed and consumer is still active, add to consumers list
-        if !self.completed && consumer.next_batch_index == self.buffer.len() {
-            self.consumers.push(consumer);
-        }
-
-        receiver
-    }
-}
-
-// Stream implementation that reads from a channel
-struct BufferedStream {
-    schema: datafusion::arrow::datatypes::SchemaRef,
-    receiver: mpsc::Receiver<Arc<BatchItem>>,
-}
-
-impl Stream for BufferedStream {
-    type Item = Result<RecordBatch, datafusion::error::DataFusionError>;
-
-    fn poll_next(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Option<Self::Item>> {
-        match self.receiver.poll_recv(cx) {
-            Poll::Ready(Some(item)) => {
-                if item.is_last {
-                    Poll::Ready(None)
-                } else {
-                    Poll::Ready(Some(Ok((*item.batch).clone())))
-                }
-            }
-            Poll::Ready(None) => Poll::Ready(None),
-            Poll::Pending => Poll::Pending,
-        }
-    }
-}
-
-impl RecordBatchStream for BufferedStream {
-    fn schema(&self) -> datafusion::arrow::datatypes::SchemaRef {
-        self.schema.clone()
-    }
-}
 
 struct Batches {
     batches: Vec<RecordBatch>,
@@ -147,6 +22,7 @@ pub struct InMemoryPartitionStore {
 }
 
 impl InMemoryPartitionStore {
+    println!("Creating InMemoryPartitionStore");
     pub fn new() -> Self {
         Self {
             stream_store: Arc::new(Mutex::new(HashMap::new())),
@@ -158,7 +34,7 @@ impl InMemoryPartitionStore {
 #[async_trait::async_trait]
 impl PartitionStore for InMemoryPartitionStore {
     fn store_batch(&self, path: &str, batch: RecordBatch) -> Result<(), BallistaError> {
-        // println!("InMemoryPartitionStore.store_batch: {}", path);
+        println!("InMemoryPartitionStore.store_batch: {}", path);
         let schema = batch.schema();
 
         // Get or create entity in batch store, insert batch
@@ -176,7 +52,7 @@ impl PartitionStore for InMemoryPartitionStore {
     }
 
     fn finalize_batches(&self, path: &str) -> Result<(), BallistaError> {
-        // println!("InMemoryPartitionStore.finalize_batches: {}", path);
+        println!("InMemoryPartitionStore.finalize_batches: {}", path);
         let mut batch_store = self.batch_store.lock().unwrap();
         let batches = batch_store.remove(path).ok_or_else(|| {
             BallistaError::General(format!(
@@ -205,7 +81,7 @@ impl PartitionStore for InMemoryPartitionStore {
         path: &str,
         stream: SendableRecordBatchStream,
     ) -> Result<Option<PartitionStats>, BallistaError> {
-        // println!("InMemoryPartitionStore.store_partition: {}", path);
+        println!("InMemoryPartitionStore.store_partition: {}", path);
         // Store the state
         self.stream_store
             .lock()
@@ -220,7 +96,7 @@ impl PartitionStore for InMemoryPartitionStore {
         &self,
         path: &str,
     ) -> Result<SendableRecordBatchStream, BallistaError> {
-        // println!("InMemoryPartitionStore.fetch_partition: {}", path);
+        println!("InMemoryPartitionStore.fetch_partition: {}", path);
         let stream = self.stream_store.lock().unwrap().remove(path);
 
         match stream {
@@ -233,7 +109,7 @@ impl PartitionStore for InMemoryPartitionStore {
     }
 
     fn delete_partition(&self, path: &str) -> Result<(), BallistaError> {
-        // println!("InMemoryPartitionStore.delete_partition: {}", path);
+        println!("InMemoryPartitionStore.delete_partition: {}", path);
         self.stream_store.lock().unwrap().remove(path);
         Ok(())
     }
@@ -242,7 +118,7 @@ impl PartitionStore for InMemoryPartitionStore {
         &self,
         path: &str,
     ) -> Result<SendableRecordBatchStream, BallistaError> {
-        // println!("InMemoryPartitionStore.take_partition: {}", path);
+        println!("InMemoryPartitionStore.take_partition: {}", path);
         let stream = self.fetch_partition(path)?;
         Ok(stream)
     }

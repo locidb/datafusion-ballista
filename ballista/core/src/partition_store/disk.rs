@@ -28,6 +28,7 @@ pub struct DiskBasedPartitionStore {
 
 impl DiskBasedPartitionStore {
     pub fn new() -> Self {
+        println!("Creating DiskBasedPartitionStore");
         Self {
             batch_writers: Arc::new(Mutex::new(HashMap::new())),
         }
