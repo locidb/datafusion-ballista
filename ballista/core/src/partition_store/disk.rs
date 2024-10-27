@@ -53,13 +53,13 @@ impl PartitionStore for DiskBasedPartitionStore {
             })?;
             let options = IpcWriteOptions::default()
                 .try_with_compression(Some(CompressionType::LZ4_FRAME))?;
-            let writer = StreamWriter::try_new_with_options(
+            let mut writer = StreamWriter::try_new_with_options(
                 file,
                 batch.schema().as_ref(),
                 options,
             )?;
-            let mut writer = batch_writers.insert(path.to_string(), writer).unwrap();
             writer.write(&batch)?;
+            batch_writers.insert(path.to_string(), writer);
         } else {
             let writer = batch_writers.get_mut(path).unwrap();
             writer.write(&batch)?;
