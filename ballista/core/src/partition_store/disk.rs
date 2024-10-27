@@ -58,7 +58,8 @@ impl PartitionStore for DiskBasedPartitionStore {
                 batch.schema().as_ref(),
                 options,
             )?;
-            batch_writers.insert(path.to_string(), writer);
+            let mut writer = batch_writers.insert(path.to_string(), writer).unwrap();
+            writer.write(&batch)?;
         } else {
             let writer = batch_writers.get_mut(path).unwrap();
             writer.write(&batch)?;
@@ -71,6 +72,10 @@ impl PartitionStore for DiskBasedPartitionStore {
         debug!("DiskBasedPartitionStore.finalize_batches: {}", path);
         let mut batch_writers = self.batch_writers.lock().unwrap();
         if let Some(mut writer) = batch_writers.remove(path) {
+            debug!(
+                "DiskBasedPartitionStore.finalize_batches, finishing writer {}",
+                path
+            );
             writer.finish()?;
         }
         Ok(())
