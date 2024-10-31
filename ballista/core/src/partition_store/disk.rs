@@ -2,7 +2,6 @@ use dashmap::DashMap;
 use std::fs::remove_file;
 use std::fs::File;
 use std::io::BufReader;
-use std::sync::Arc;
 
 use datafusion::arrow::array::RecordBatch;
 use datafusion::arrow::ipc::reader::StreamReader;
@@ -23,14 +22,14 @@ use datafusion::{
 };
 
 pub struct DiskBasedPartitionStore {
-    batch_writers: Arc<DashMap<String, StreamWriter<File>>>,
+    batch_writers: DashMap<String, StreamWriter<File>>,
 }
 
 impl DiskBasedPartitionStore {
     pub fn new() -> Self {
         debug!("Creating DiskBasedPartitionStore");
         Self {
-            batch_writers: Arc::new(DashMap::new()),
+            batch_writers: DashMap::new(),
         }
     }
 }
