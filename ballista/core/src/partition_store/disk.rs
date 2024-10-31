@@ -1,9 +1,8 @@
-use std::collections::HashMap;
+use dashmap::DashMap;
 use std::fs::remove_file;
 use std::fs::File;
 use std::io::BufReader;
 use std::sync::Arc;
-use std::sync::Mutex;
 
 use datafusion::arrow::array::RecordBatch;
 use datafusion::arrow::ipc::reader::StreamReader;
@@ -24,14 +23,14 @@ use datafusion::{
 };
 
 pub struct DiskBasedPartitionStore {
-    batch_writers: Arc<Mutex<HashMap<String, StreamWriter<File>>>>,
+    batch_writers: Arc<DashMap<String, StreamWriter<File>>>,
 }
 
 impl DiskBasedPartitionStore {
     pub fn new() -> Self {
         debug!("Creating DiskBasedPartitionStore");
         Self {
-            batch_writers: Arc::new(Mutex::new(HashMap::new())),
+            batch_writers: Arc::new(DashMap::new()),
         }
     }
 }
@@ -44,40 +43,40 @@ impl PartitionStore for DiskBasedPartitionStore {
             path,
             batch.num_rows()
         );
-        // get or create a new writer
-        let mut batch_writers = self.batch_writers.lock().unwrap();
-        if !batch_writers.contains_key(path) {
-            let file = File::create(path).map_err(|e| {
-                error!("Failed to create partition file at {}: {:?}", path, e);
-                BallistaError::IoError(e)
-            })?;
-            let options = IpcWriteOptions::default()
-                .try_with_compression(Some(CompressionType::LZ4_FRAME))?;
-            let mut writer = StreamWriter::try_new_with_options(
-                file,
-                batch.schema().as_ref(),
-                options,
-            )?;
-            writer.write(&batch)?;
-            batch_writers.insert(path.to_string(), writer);
-        } else {
-            let writer = batch_writers.get_mut(path).unwrap();
-            writer.write(&batch)?;
-        }
+
+        let mut writer =
+            self.batch_writers
+                .entry(path.to_string())
+                .or_insert_with(|| {
+                    let file =
+                        File::create(path).expect("Failed to create partition file");
+                    let options = IpcWriteOptions::default()
+                        .try_with_compression(Some(CompressionType::LZ4_FRAME))
+                        .expect("Failed to set compression type");
+                    StreamWriter::try_new_with_options(
+                        file,
+                        batch.schema().as_ref(),
+                        options,
+                    )
+                    .expect("Failed to create StreamWriter")
+                });
+
+        writer.write(&batch)?;
 
         Ok(())
     }
 
     fn finalize_batches(&self, path: &str) -> Result<(), BallistaError> {
         debug!("DiskBasedPartitionStore.finalize_batches: {}", path);
-        let mut batch_writers = self.batch_writers.lock().unwrap();
-        if let Some(mut writer) = batch_writers.remove(path) {
+        // Remove the writer from the map and finalize it if it exists
+        if let Some(mut writer_entry) = self.batch_writers.remove(path) {
             debug!(
                 "DiskBasedPartitionStore.finalize_batches, finishing writer {}",
                 path
             );
-            writer.finish()?;
+            writer_entry.1.finish()?;
         }
+
         Ok(())
     }
 

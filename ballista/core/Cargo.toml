@@ -46,6 +46,7 @@ arrow-flight = { workspace = true }
 async-trait = { workspace = true }
 chrono = { version = "0.4", default-features = false }
 clap = { workspace = true }
+dashmap = { workspace = true }
 datafusion = { workspace = true }
 datafusion-proto = { workspace = true }
 datafusion-proto-common = { workspace = true }
