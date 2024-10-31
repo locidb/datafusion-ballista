@@ -205,18 +205,18 @@ impl ShuffleWriterExec {
                     debug!("Writing results to {}", path);
 
                     // stream results to disk
-                    let stats = utils::write_stream_to_disk(
-                        &mut stream,
-                        path,
-                        &write_metrics.write_time,
-                    )
-                    // // stream results to partition store
-                    // let maybe_stats = partition_store
-                    //     .store_partition(path, stream)
-                    .await
-                    .map_err(|e| DataFusionError::Execution(format!("{e:?}")))?;
+                    // let stats = utils::write_stream_to_disk(
+                    //     &mut stream,
+                    //     path,
+                    //     &write_metrics.write_time,
+                    // )
+                    // stream results to partition store
+                    let maybe_stats = partition_store
+                        .store_partition(path, stream)
+                        .await
+                        .map_err(|e| DataFusionError::Execution(format!("{e:?}")))?;
 
-                    let maybe_stats = Some(stats);
+                    // let maybe_stats = Some(stats);
 
                     let num_rows = maybe_stats
                         .map_or_else(|| 0, |stats| stats.num_rows.unwrap_or(0));
