@@ -415,9 +415,36 @@ async fn fetch_partition_local(
 ) -> result::Result<SendableRecordBatchStream, BallistaError> {
     let path = &location.path;
 
-    partition_store.fetch_partition(path).map_err(|e| {
-        BallistaError::General(format!("Failed to fetch partition at {path}: {e:?}"))
-    })
+    let metadata = &location.executor_meta;
+    let partition_id = &location.partition_id;
+
+    let reader = fetch_partition_local_inner(path).map_err(|e| {
+        // return BallistaError::FetchFailed may let scheduler retry this task.
+        BallistaError::FetchFailed(
+            metadata.id.clone(),
+            partition_id.stage_id,
+            partition_id.partition_id,
+            e.to_string(),
+        )
+    })?;
+    Ok(Box::pin(LocalShuffleStream::new(reader)))
+
+    // partition_store.fetch_partition(path).map_err(|e| {
+    //     BallistaError::General(format!("Failed to fetch partition at {path}: {e:?}"))
+    // })
+}
+
+fn fetch_partition_local_inner(
+    path: &str,
+) -> result::Result<StreamReader<BufReader<File>>, BallistaError> {
+    let file = File::open(path).map_err(|e| {
+        BallistaError::General(format!("Failed to open partition file at {path}: {e:?}"))
+    })?;
+    let file = BufReader::new(file);
+    let reader = StreamReader::try_new(file, None).map_err(|e| {
+        BallistaError::General(format!("Failed to new arrow FileReader at {path}: {e:?}"))
+    })?;
+    Ok(reader)
 }
 
 async fn fetch_partition_object_store(
