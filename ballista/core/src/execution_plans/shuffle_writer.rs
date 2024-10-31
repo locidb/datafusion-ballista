@@ -85,7 +85,7 @@ pub struct WriteTracker {
     pub num_rows: usize,
     pub num_bytes: usize,
     pub path: PathBuf,
-    pub writer: StreamWriter<File>,
+    // pub writer: StreamWriter<File>,
 }
 
 #[derive(Debug, Clone)]
