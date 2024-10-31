@@ -21,6 +21,7 @@
 //! will use the ShuffleReaderExec to read these results.
 
 use std::any::Any;
+use std::fs::File;
 use std::future::Future;
 use std::iter::Iterator;
 use std::path::PathBuf;
@@ -31,11 +32,13 @@ use crate::partition_store::get_partition_store;
 
 use crate::serde::protobuf::ShuffleWritePartition;
 use crate::serde::scheduler::PartitionStats;
+use crate::utils;
 use datafusion::arrow::array::{
     ArrayBuilder, ArrayRef, StringBuilder, StructBuilder, UInt32Builder, UInt64Builder,
 };
 use datafusion::arrow::datatypes::{DataType, Field, Schema, SchemaRef};
 
+use datafusion::arrow::ipc::writer::StreamWriter;
 use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::error::{DataFusionError, Result};
 use datafusion::physical_plan::memory::MemoryStream;
@@ -82,6 +85,7 @@ pub struct WriteTracker {
     pub num_rows: usize,
     pub num_bytes: usize,
     pub path: PathBuf,
+    pub writer: StreamWriter<File>,
 }
 
 #[derive(Debug, Clone)]
@@ -199,11 +203,19 @@ impl ShuffleWriterExec {
                     let path = path.to_str().unwrap();
                     debug!("Writing results to {}", path);
 
-                    // stream results to partition store
-                    let maybe_stats = partition_store
-                        .store_partition(path, stream)
-                        .await
-                        .map_err(|e| DataFusionError::Execution(format!("{e:?}")))?;
+                    // stream results to disk
+                    let stats = utils::write_stream_to_disk(
+                        &mut stream,
+                        path,
+                        &write_metrics.write_time,
+                    )
+                    // // stream results to partition store
+                    // let maybe_stats = partition_store
+                    //     .store_partition(path, stream)
+                    .await
+                    .map_err(|e| DataFusionError::Execution(format!("{e:?}")))?;
+
+                    let maybe_stats = Some(stats);
 
                     let num_rows = maybe_stats
                         .map_or_else(|| 0, |stats| stats.num_rows.unwrap_or(0));
