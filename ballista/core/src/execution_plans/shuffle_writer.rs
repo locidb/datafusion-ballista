@@ -84,7 +84,7 @@ pub struct ShuffleWriterExec {
 pub struct WriteTracker {
     pub num_batches: usize,
     pub num_rows: usize,
-    // pub num_bytes: usize,
+    pub num_bytes: usize,
     pub path: PathBuf,
     // pub writer: StreamWriter<File>,
 }
@@ -260,7 +260,7 @@ impl ShuffleWriterExec {
                             input_batch,
                             |output_partition, output_batch| {
                                 let num_rows = output_batch.num_rows();
-                                // let num_bytes = output_batch.get_array_memory_size();
+                                let num_bytes = output_batch.get_array_memory_size();
                                 // partition func in datafusion make sure not write empty output_batch.
                                 let timer = write_metrics.write_time.timer();
                                 match &mut writers[output_partition] {
@@ -268,8 +268,8 @@ impl ShuffleWriterExec {
                                         w.num_batches += 1;
                                         w.num_rows += output_batch.num_rows();
                                         // w.writer.write(&output_batch)?;
-                                        // w.num_bytes +=
-                                        //     output_batch.get_array_memory_size();
+                                        w.num_bytes +=
+                                            output_batch.get_array_memory_size();
                                         let _ = partition_store.store_batch(
                                             w.path.to_str().unwrap(),
                                             output_batch,
@@ -307,7 +307,7 @@ impl ShuffleWriterExec {
                                         writers[output_partition] = Some(WriteTracker {
                                             num_batches: 1,
                                             num_rows,
-                                            // num_bytes,
+                                            num_bytes,
                                             path,
                                             // writer,
                                         });
@@ -325,7 +325,7 @@ impl ShuffleWriterExec {
 
                     for (i, w) in writers.iter_mut().enumerate() {
                         if let Some(w) = w {
-                            let num_bytes = fs::metadata(&w.path)?.len();
+                            // let num_bytes = fs::metadata(&w.path)?.len();
                             // w.writer.finish()?;
                             let _ = partition_store
                                 .finalize_batches(w.path.to_str().unwrap());
@@ -335,8 +335,8 @@ impl ShuffleWriterExec {
                                 w.path,
                                 w.num_batches,
                                 w.num_rows,
-                                // w.num_bytes
-                                num_bytes
+                                w.num_bytes
+                                // num_bytes
                             );
 
                             part_locs.push(ShuffleWritePartition {
@@ -344,7 +344,7 @@ impl ShuffleWriterExec {
                                 path: w.path.to_string_lossy().to_string(),
                                 num_batches: w.num_batches as u64,
                                 num_rows: w.num_rows as u64,
-                                num_bytes: num_bytes as u64,
+                                num_bytes: w.num_bytes as u64,
                             });
                         }
                     }
