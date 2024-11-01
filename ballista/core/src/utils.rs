@@ -324,6 +324,16 @@ impl<T: 'static + AsLogicalPlan> BallistaQueryPlanner<T> {
     }
 }
 
+impl<T: 'static + AsLogicalPlan> std::fmt::Debug for BallistaQueryPlanner<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("BallistaQueryPlanner")
+            .field("scheduler_url", &self.scheduler_url)
+            .field("config", &self.config)
+            .field("extension_codec", &"Arc<dyn LogicalExtensionCodec>")
+            .field("plan_repr", &"PhantomData<ShuffleWriterExec>")
+            .finish()
+    }
+}
 #[async_trait]
 impl<T: 'static + AsLogicalPlan> QueryPlanner for BallistaQueryPlanner<T> {
     async fn create_physical_plan(

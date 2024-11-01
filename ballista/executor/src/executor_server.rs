@@ -15,6 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use ballista_core::partition_store::PartitionStoreRef;
 use ballista_core::BALLISTA_VERSION;
 use std::collections::HashMap;
 use std::convert::TryInto;
@@ -349,7 +350,9 @@ impl<T: 'static + AsLogicalPlan, U: 'static + AsExecutionPlan> ExecutorServer<T,
                     debug!("Fail to set session config for ({},{}): {:?}", k, v, e);
                 }
             }
-            let session_config = SessionConfig::from(config);
+            let session_config = SessionConfig::from(config).with_extension(Arc::new(
+                PartitionStoreRef(self.executor.partition_store.clone()),
+            ));
 
             let function_registry = task.function_registry;
             let runtime = self.executor.get_runtime();

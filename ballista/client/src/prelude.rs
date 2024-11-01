@@ -26,6 +26,7 @@ pub use ballista_core::{
         BALLISTA_STANDALONE_PARALLELISM, BALLISTA_WITH_INFORMATION_SCHEMA,
     },
     error::{BallistaError, Result},
+    partition_store::PartitionStoreType,
 };
 
 pub use futures::StreamExt;

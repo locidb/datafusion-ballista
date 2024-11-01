@@ -18,6 +18,7 @@
 use crate::metrics::LoggingMetricsCollector;
 use crate::{execution_loop, executor::Executor, flight_service::BallistaFlightService};
 use arrow_flight::flight_service_server::FlightServiceServer;
+use ballista_core::partition_store::PartitionStore;
 use ballista_core::{
     error::Result,
     object_store_registry::with_object_store_registry,
@@ -45,6 +46,7 @@ pub async fn new_standalone_executor<
     scheduler: SchedulerGrpcClient<Channel>,
     concurrent_tasks: usize,
     codec: BallistaCodec<T, U>,
+    partition_store: Arc<dyn PartitionStore>,
 ) -> Result<()> {
     // Let the OS assign a random, free port
     let listener = TcpListener::bind("localhost:0").await?;
@@ -85,9 +87,10 @@ pub async fn new_standalone_executor<
         Arc::new(LoggingMetricsCollector::default()),
         concurrent_tasks,
         None,
+        partition_store.clone(),
     ));
 
-    let service = BallistaFlightService::new();
+    let service = BallistaFlightService::new(partition_store);
     let server = FlightServiceServer::new(service);
     tokio::spawn(
         create_grpc_server()

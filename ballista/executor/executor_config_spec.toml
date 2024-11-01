@@ -25,6 +25,12 @@ name = "version"
 doc = "Print version of this executable"
 
 [[param]]
+name = "partition_store"
+type = "String"
+default = "std::string::String::from(\"disk\")"
+doc = "Partition store"
+
+[[param]]
 name = "scheduler_host"
 type = "String"
 default = "std::string::String::from(\"localhost\")"

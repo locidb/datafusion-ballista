@@ -135,7 +135,11 @@ impl SessionContextExt for SessionContext {
 
     #[cfg(feature = "standalone")]
     async fn standalone() -> datafusion::error::Result<Self> {
-        use ballista_core::serde::BallistaCodec;
+        use std::sync::Arc;
+
+        use ballista_core::{
+            partition_store::memory::InMemoryPartitionStore, serde::BallistaCodec,
+        };
         use datafusion_proto::protobuf::PhysicalPlanNode;
 
         log::info!("Running in local mode. Scheduler will be run in-proc");
@@ -194,6 +198,7 @@ impl SessionContextExt for SessionContext {
             scheduler,
             concurrent_tasks,
             default_codec,
+            Arc::new(InMemoryPartitionStore::new()),
         )
         .await
         .map_err(|e| DataFusionError::Configuration(e.to_string()))?;

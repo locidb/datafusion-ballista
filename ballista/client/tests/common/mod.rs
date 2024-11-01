@@ -15,11 +15,12 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use std::env;
 use std::error::Error;
 use std::path::PathBuf;
+use std::{env, sync::Arc};
 
 use ballista::prelude::BallistaConfig;
+use ballista_core::partition_store::memory::InMemoryPartitionStore;
 use ballista_core::serde::{
     protobuf::scheduler_grpc_client::SchedulerGrpcClient, BallistaCodec,
 };
@@ -127,6 +128,7 @@ pub async fn setup_test_cluster() -> (String, u16) {
         scheduler,
         config.default_standalone_parallelism(),
         default_codec,
+        Arc::new(InMemoryPartitionStore::new()),
     )
     .await
     .expect("executor to be created");

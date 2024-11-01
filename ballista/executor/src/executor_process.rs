@@ -25,6 +25,10 @@ use std::{env, io};
 
 use anyhow::{Context, Result};
 use arrow_flight::flight_service_server::FlightServiceServer;
+use ballista_core::partition_store::disk::DiskBasedPartitionStore;
+use ballista_core::partition_store::hybrid::HybridPartitionStore;
+use ballista_core::partition_store::memory::InMemoryPartitionStore;
+use ballista_core::partition_store::PartitionStore;
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
 use log::{error, info, warn};
@@ -96,6 +100,7 @@ pub struct ExecutorProcessConfig {
     /// Optional execution engine to use to execute physical plans, will default to
     /// DataFusion if none is provided.
     pub execution_engine: Option<Arc<dyn ExecutionEngine>>,
+    pub partition_store: String,
 }
 
 pub async fn start_executor_process(opt: Arc<ExecutorProcessConfig>) -> Result<()> {
@@ -191,6 +196,19 @@ pub async fn start_executor_process(opt: Arc<ExecutorProcessConfig>) -> Result<(
 
     let metrics_collector = Arc::new(LoggingMetricsCollector::default());
 
+    let partition_store = match opt.partition_store.as_str() {
+        "memory" => Arc::new(InMemoryPartitionStore::new()) as Arc<dyn PartitionStore>,
+        "disk" => Arc::new(DiskBasedPartitionStore::new()) as Arc<dyn PartitionStore>,
+        "hybrid" => Arc::new(HybridPartitionStore::default()) as Arc<dyn PartitionStore>,
+        _ => {
+            return Err(BallistaError::General(format!(
+                "Unsupported partition store: {}",
+                opt.partition_store
+            ))
+            .into())
+        }
+    };
+
     let executor = Arc::new(Executor::new(
         executor_meta,
         &work_dir,
@@ -198,6 +216,7 @@ pub async fn start_executor_process(opt: Arc<ExecutorProcessConfig>) -> Result<(
         metrics_collector,
         concurrent_tasks,
         opt.execution_engine.clone(),
+        partition_store,
     ));
 
     let connect_timeout = opt.scheduler_connect_timeout_seconds as u64;
@@ -315,6 +334,7 @@ pub async fn start_executor_process(opt: Arc<ExecutorProcessConfig>) -> Result<(
     service_handlers.push(tokio::spawn(flight_server_run(
         addr,
         shutdown_noti.subscribe_for_shutdown(),
+        executor.partition_store.clone(),
     )));
 
     let tasks_drained = TasksDrainedFuture(executor);
@@ -418,8 +438,9 @@ pub async fn start_executor_process(opt: Arc<ExecutorProcessConfig>) -> Result<(
 async fn flight_server_run(
     addr: SocketAddr,
     mut grpc_shutdown: Shutdown,
+    partition_store: Arc<dyn PartitionStore>,
 ) -> Result<(), BallistaError> {
-    let service = BallistaFlightService::new();
+    let service = BallistaFlightService::new(partition_store);
     let server = FlightServiceServer::new(service);
     info!(
         "Ballista v{} Rust Executor Flight Server listening on {:?}",

@@ -87,6 +87,7 @@ async fn main() -> Result<()> {
         cache_capacity: opt.cache_capacity,
         cache_io_concurrency: opt.cache_io_concurrency,
         execution_engine: None,
+        partition_store: opt.partition_store,
     };
 
     start_executor_process(Arc::new(config)).await

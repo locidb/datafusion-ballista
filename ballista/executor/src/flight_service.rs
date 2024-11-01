@@ -18,18 +18,18 @@
 //! Implementation of the Apache Arrow Flight protocol that wraps an executor.
 
 use arrow::ipc::reader::StreamReader;
-use std::convert::TryFrom;
-use std::fs::File;
-use std::pin::Pin;
-
+use arrow::ipc::writer::IpcWriteOptions;
 use arrow::ipc::CompressionType;
+use ballista_core::partition_store::PartitionStore;
+use std::convert::TryFrom;
+use std::pin::Pin;
+use std::sync::Arc;
+
 use arrow_flight::encode::FlightDataEncoderBuilder;
 use arrow_flight::error::FlightError;
-use ballista_core::error::BallistaError;
 use ballista_core::serde::decode_protobuf;
 use ballista_core::serde::scheduler::Action as BallistaAction;
 
-use arrow::ipc::writer::IpcWriteOptions;
 use arrow_flight::{
     flight_service_server::FlightService, Action, ActionType, Criteria, Empty,
     FlightData, FlightDescriptor, FlightInfo, HandshakeRequest, HandshakeResponse,
@@ -38,28 +38,22 @@ use arrow_flight::{
 use datafusion::arrow::{error::ArrowError, record_batch::RecordBatch};
 use futures::{Stream, StreamExt, TryStreamExt};
 use log::{debug, info};
-use std::io::{BufReader, Read, Seek};
-use tokio::sync::mpsc::channel;
+use std::io::{Read, Seek};
 use tokio::sync::mpsc::error::SendError;
-use tokio::{sync::mpsc::Sender, task};
-use tokio_stream::wrappers::ReceiverStream;
+use tokio::sync::mpsc::Sender;
 use tonic::metadata::MetadataValue;
 use tonic::{Request, Response, Status, Streaming};
 use tracing::warn;
 
 /// Service implementing the Apache Arrow Flight Protocol
 #[derive(Clone)]
-pub struct BallistaFlightService {}
-
-impl BallistaFlightService {
-    pub fn new() -> Self {
-        Self {}
-    }
+pub struct BallistaFlightService {
+    partition_store: Arc<dyn PartitionStore>,
 }
 
-impl Default for BallistaFlightService {
-    fn default() -> Self {
-        Self::new()
+impl BallistaFlightService {
+    pub fn new(partition_store: Arc<dyn PartitionStore>) -> Self {
+        Self { partition_store }
     }
 }
 
@@ -88,32 +82,44 @@ impl FlightService for BallistaFlightService {
         match &action {
             BallistaAction::FetchPartition { path, .. } => {
                 debug!("FetchPartition reading {}", path);
-                let file = File::open(path)
-                    .map_err(|e| {
-                        BallistaError::General(format!(
-                            "Failed to open partition file at {path}: {e:?}"
-                        ))
-                    })
-                    .map_err(|e| from_ballista_err(&e))?;
-                let file = BufReader::new(file);
-                let reader =
-                    StreamReader::try_new(file, None).map_err(|e| from_arrow_err(&e))?;
+                // let file = File::open(path)
+                //     .map_err(|e| {
+                //         BallistaError::General(format!(
+                //             "Failed to open partition file at {path}: {e:?}"
+                //         ))
+                //     })
+                //     .map_err(|e| from_ballista_err(&e))?;
 
-                let (tx, rx) = channel(2);
-                let schema = reader.schema();
-                task::spawn_blocking(move || {
-                    if let Err(e) = read_partition(reader, tx) {
-                        warn!(error = %e, "error streaming shuffle partition");
-                    }
-                });
+                // let file = BufReader::new(file);
+                // let reader =
+                //     StreamReader::try_new(file, None).map_err(|e| from_arrow_err(&e))?;
+
+                // let (tx, rx) = channel(2);
+                // let schema = reader.schema();
+                // task::spawn_blocking(move || {
+                //     if let Err(e) = read_partition(reader, tx) {
+                //         warn!(error = %e, "error streaming shuffle partition");
+                //     }
+                // });
+
+                let partition =
+                    self.partition_store.fetch_partition(path).map_err(|e| {
+                        warn!(error = %e, "error fetching partition");
+                        Status::internal("Error fetching partition")
+                    })?;
+                let schema = partition.schema();
+                let partition_stream = partition
+                    .map(|rb| rb.map_err(|e| FlightError::ExternalError(Box::new(e))));
+                // let e = partition_stream.peekable().peek();
 
                 let write_options: IpcWriteOptions = IpcWriteOptions::default()
                     .try_with_compression(Some(CompressionType::LZ4_FRAME))
                     .map_err(|e| from_arrow_err(&e))?;
+
                 let flight_data_stream = FlightDataEncoderBuilder::new()
                     .with_schema(schema)
                     .with_options(write_options)
-                    .build(ReceiverStream::new(rx))
+                    .build(partition_stream)
                     .map_err(|err| Status::from_error(Box::new(err)));
 
                 Ok(Response::new(
